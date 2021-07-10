@@ -129,3 +129,154 @@ tetra <- read.table("experiments_survival/tetra cycle 3 day 5 to 6 survival_2019
 fisher.test(tetra, alternative = "two.sided")
 
 ```
+
+
+
+# brms survival functional tests
+
+```{r setup2}
+library(tidyverse)
+library(brms)
+library(tidybayes)
+library(cowplot)
+library(multcomp)
+dat <- read_tsv("experiments_survival/functional_test_Tetracycline_cycle3_2019.txt") %>% mutate(cage2 = paste(group, cage), group = factor(group, levels = c("control", "coevolved")))
+cycle2 <- read_tsv("experiments_survival/functional_test_Tetracycline_cycle2_2021.txt") %>% mutate(cage2 = paste(group, cage), group = factor(group, levels = c("control", "coevolved")))
+cycle3 <- read_tsv("experiments_survival/functional_test_Tetracycline_cycle3_2021.txt") %>% mutate(cage2 = paste(group, cage), group = factor(group, levels = c("control", "coevolved")))
+controlDatFiltered <- read_tsv("experiments_survival/functional_test_filtered_guts_Tetracycline_2021.txt") %>% mutate(cage2 = paste(group, cage),group = factor(group, levels = c("filtered_control", "filtered_tetracycline")))
+
+free <- read_tsv("experiments_survival/functional_test_microbiome_free_cycle3_2021.txt") %>% mutate(cage2 = paste(group, cage), group = factor(group, levels = c("control", "microbiome_free")))
+```
+
+
+# Tetracycline exp 2019
+
+```{r cache=T}
+priorsCage <- c(prior(student_t(3,0,2.5), class = "b"))
+tet <- brm(alive ~ 0 + cage2 , data = filter(dat, treatment == "Tetracycline"), family= bernoulli(), control = list(adapt_delta = .99, max_treedepth = 10), iter = 5000, cores = 4, prior = priorsCage)
+plot(tet)
+summary(tet)
+(hypTet <- hypothesis(tet, "cage2coevolvedcage1 + cage2coevolvedcage2 + cage2coevolvedcage3 = cage2controlcage1 +cage2controlcage2 + cage2controlcage3"))
+```
+
+
+# Tetracycline exp 2021 cycle 2
+
+```{r cache=T}
+priorsCage <- c(prior(student_t(3,0,2.5), class = "b"))
+tet2 <- brm(alive ~ 0 + cage2 , data = cycle2, family= bernoulli(), control = list(adapt_delta = .99, max_treedepth = 10), iter = 5000, cores = 4, prior = priorsCage)
+plot(tet2)
+summary(tet2)
+(hypTet2 <- hypothesis(tet2, "cage2coevolvedcage1+ cage2coevolvedcage2 + cage2coevolvedcage3+ cage2coevolvedcage4 = cage2controlcage1 +cage2controlcage2 + cage2controlcage3+ cage2controlcage4"))
+```
+
+
+# Tetracycline exp 2021 cycle 3
+
+```{r cache=T}
+priorsCage <- c(prior(student_t(3,0,2.5), class = "b"))
+tet3 <- brm(alive ~ 0 + cage2 , data = cycle3, family= bernoulli(), control = list(adapt_delta = .99, max_treedepth = 10), iter = 5000, cores = 4, prior = priorsCage)
+plot(tet3)
+summary(tet3)
+(hypTet3 <- hypothesis(tet3, "cage2coevolvedcage1+ cage2coevolvedcage2 + cage2coevolvedcage3+ cage2coevolvedcage4 = cage2controlcage1 +cage2controlcage2 + cage2controlcage3+ cage2controlcage4"))
+```
+
+# Filtered microbiome added control
+
+```{r cache=T}
+ContrFiltered <- brm(alive ~ 0 + cage2, data = controlDatFiltered, family= bernoulli(), control = list(adapt_delta = .99), iter = 5000, cores = 4, prior = priorsCage)
+plot(ContrFiltered)
+summary(ContrFiltered)
+(hypContrFiltered <- hypothesis(ContrFiltered, "cage2filtered_tetracyclinecage1 + cage2filtered_tetracyclinecage2 + cage2filtered_tetracyclinecage3 + cage2filtered_tetracyclinecage4  = cage2filtered_controlcage1 + cage2filtered_controlcage2 + cage2filtered_controlcage3 + cage2filtered_controlcage4"))
+```
+
+```{r cache=T}
+free <- brm(alive ~ 0 + cage2, data = free, family= bernoulli(), control = list(adapt_delta = .99), iter = 5000, cores = 4, prior = priorsCage)
+plot(free)
+summary(free)
+(hypfree <- hypothesis(free, "cage2microbiome_freecage1+ cage2microbiome_freecage2 + cage2microbiome_freecage3 = cage2controlcage1 +cage2controlcage2 + cage2controlcage3+ cage2controlcage4"))
+```
+
+
+# Plot results
+
+```{r}
+p1 <- tibble("tetracycline" = hypTet$samples[,1]) %>% gather(key = "contrast", value = "b") %>% group_by(contrast) %>%  ggplot(aes(x = contrast, y=b)) + stat_halfeye(point_interval = mode_hdi, .width = c(.66, .95)) + geom_hline(yintercept = 0, color = "red") + theme_minimal() + theme(axis.title.x = element_blank(), axis.title.y = element_text(vjust = 0.5), plot.margin = unit(c(.5,.5,.5,.5), "cm"), axis.text.x = element_text(angle=45, hjust=1)) + coord_trans(ylim=c(-25,15)) +  ggtitle("Past chemical exposure exp 2019") + ylab(expression("Bayes factor difference between\nsurvial in treatment and control group"))
+
+ggsave("experiments_survival/cycle3_survival_2019.png", height = 6, width = 5)
+
+p2 <- tibble("tetracycline" = hypTet2$samples[,1]) %>% gather(key = "contrast", value = "b") %>% group_by(contrast) %>%  ggplot(aes(x = contrast, y=b)) + stat_halfeye(point_interval = mode_hdi, .width = c(.66, .95)) + geom_hline(yintercept = 0, color = "red") + theme_minimal() + theme(axis.title.x = element_blank(), axis.title.y = element_text(vjust = 0.5), plot.margin = unit(c(.5,.5,.5,.5), "cm"), axis.text.x = element_text(angle=45, hjust=1)) + coord_trans(ylim=c(-25,15)) +  ggtitle("Past chemical exposure exp 2021 cycl 2") + ylab(expression("Bayes factor difference between\nsurvial in treatment and control group"))
+
+ggsave("experiments_survival/cycle2_survival_2021.png", height = 6, width = 5)
+
+p3 <- tibble("tetracycline" = hypTet3$samples[,1]) %>% gather(key = "contrast", value = "b") %>% group_by(contrast) %>%  ggplot(aes(x = contrast, y=b)) + stat_halfeye(point_interval = mode_hdi, .width = c(.66, .95)) + geom_hline(yintercept = 0, color = "red") + theme_minimal() + theme(axis.title.x = element_blank(), axis.title.y = element_text(vjust = 0.5), plot.margin = unit(c(.5,.5,.5,.5), "cm"), axis.text.x = element_text(angle=45, hjust=1)) + coord_trans(ylim=c(-25,15)) +  ggtitle("Past chemical exposure exp 2021 cycl 3") + ylab(expression("Bayes factor difference between\nsurvial in treatment and control group"))
+
+ggsave("experiments_survival/cycle3_survival_2021.png", height = 6, width = 5)
+
+
+p4 <- tibble("+ gut filtrate" = hypContrFiltered$samples[,1]) %>% gather(key = "contrast", value = "b") %>% group_by(contrast) %>%  ggplot(aes(x = contrast, y=b)) + stat_halfeye(point_interval = mode_hdi, .width = c(.66, .95)) + geom_hline(yintercept = 0, color = "red") + theme_minimal() + theme(axis.title.x = element_blank(), axis.title.y = element_text(vjust = 0.5), plot.margin = unit(c(.5,.5,.5,.5), "cm"), axis.text.x = element_text(angle=45, hjust=1)) + coord_trans(ylim=c(-20,15)) +  ggtitle("filtered gut content 2021") + ylab(expression("Bayes factor difference between\nsurvial in treatment and control group"))
+
+ggsave("experiments_survival/filtered_guts_survival_2021.png", height = 6, width = 5)
+
+
+free <- tibble("microbiome free" = hypfree$samples[,1]) %>% gather(key = "contrast", value = "b") %>% group_by(contrast) %>%  ggplot(aes(x = contrast, y=b)) + stat_halfeye(point_interval = mode_hdi, .width = c(.66, .95)) + geom_hline(yintercept = 0, color = "red") + theme_minimal() + theme(axis.title.x = element_blank(), axis.title.y = element_text(vjust = 0.5), plot.margin = unit(c(.5,.5,.5,.5), "cm"), axis.text.x = element_text(angle=45, hjust=1)) + coord_trans(ylim=c(-20,15)) +  ggtitle("microbiome free") + ylab(expression("Bayes factor difference between\nsurvial in treatment and control group"))
+
+ggsave("experiments_survival/microbiome_free_survival_2021.png", height = 6, width = 5)
+
+custom.col <- c("#C4961A", "#D16103", "#52854C", "#4E84C4")
+
+p5 <- tibble("2019 results" = hypTet$samples[,1], "2021 results cycle 2" = hypTet2$samples[,1], "2021 results cycle 3" = hypTet3$samples[,1],"2021 +filtered guts" = hypContrFiltered$samples[,1]) %>% gather(key = "contrast", value = "b") %>% group_by(contrast) %>%  ggplot(aes(x = contrast, y=b)) + stat_halfeye(point_interval = mode_hdi, .width = c(.66, .95),alpha=0.5) +scale_color_manual(values=c("#C4961A", "#D16103", "#52854C", "#4E84C4"))+ geom_hline(yintercept = 0, color = "red") + theme_minimal() +theme(axis.title.x = element_blank(), axis.title.y = element_text(vjust = 0.5), plot.margin = unit(c(.5,.5,.5,.5), "cm"), axis.text.x = element_text(angle=45, hjust=1, size=12))  + coord_trans(ylim=c(-25,20)) + ggtitle("Tetracycline results")+ ylab(expression("Bayes factor difference between\nsurvial in treatment and control group"))
+
+p5
+```
+
+
+### Statistics on survival data of bees with pre-exposed microbiomes vs respective controls under high chemical stress for main experiment
+
+```{r survival_data}
+tetra1 <- read.table("experiments_survival/fisher_survival_2019.txt", header = TRUE)
+fisher.test(tetra1, alternative = "two.sided")
+
+tetra2 <- read.table("experiments_survival/fisher_survival_2021_cycle2.txt", header = TRUE)
+fisher.test(tetra2, alternative = "two.sided")
+
+tetra3 <- read.table("experiments_survival/fisher_survival_2021_cycle3.txt", header = TRUE)
+fisher.test(tetra3, alternative = "two.sided")
+
+filtered <- read.table("experiments_survival/fisher_survival_filtered_gut_2021.txt", header = TRUE)
+fisher.test(filtered, alternative = "two.sided")
+```
+
+
+
+### plot percent survival AFTER high toxin application (for each toxin applied to co-evolved and control treatment)
+```{r boxplot_survival}
+library(reshape2)
+
+survive <- read.table("experiments_survival/all_percent_surv2.txt", header = TRUE)
+df<-melt(survive)
+
+#compare_means(value ~ group, data = df, group.by = "toxin", method = "t.test")
+
+  p<-ggplot(df, aes(x=as.factor(experiment), y=value, fill=group)) +  
+  stat_boxplot(geom = "errorbar",
+               width=0.4, size=1.8,position = position_dodge(width = 0.8))+geom_boxplot(lwd=1.1, position = position_dodge(width = 0.8))#+
+  scale_fill_manual(values=fill)
+p <- p + xlab("Experiment") + ylab("Fraction survival") + ggtitle("Survival after high toxin application")
+p <- p + guides(fill=guide_legend(title=element_blank()))
+p <- p + theme(plot.title = element_text(hjust = 0.5, size=17, face="bold", color="grey35"))
+p <- p+ theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())    
+p <- p+ theme(panel.border = element_blank())
+p <- p+ theme(panel.background = element_blank())
+p <- p+theme(axis.line = element_line(colour = "black", size=1))
+p <- p+theme(axis.text.x=element_text(size=14,face="bold",angle=-90))
+p <- p+theme(axis.text.y=element_text(size=14,face="bold"))
+p <- p+theme(axis.title=element_text(size=17,face="bold"))
+p<- p+theme(legend.text=element_text(size=13))
+p<-p+theme(axis.title.x=element_text(margin=margin(t = 12, r = 0, b = 0, l = 0)))
+p1<-p+theme(axis.title.y=element_text(margin=margin(t = 0, r = 10, b = 0, l = 0)))+ylim(0,1)
+#p2<-p1+stat_compare_means()
+
+ggsave("experiments_survival/boxplot_survival.png", height = 5, width = 8)
+```
+
