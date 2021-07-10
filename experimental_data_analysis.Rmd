@@ -1,0 +1,131 @@
+---
+title: "experimental_data_analysis"
+author: "Vienna"
+date: "7/9/2021"
+output: html_document
+---
+
+ 
+```{r setup, echo=FALSE, include=FALSE}
+library(dplyr)
+library(survival)
+library(km.ci)
+library(ggplot2)
+library(magrittr)
+library(ggpubr)
+library(survminer)
+library(gtable)
+library(rlang)
+library(tidyverse)
+library(reshape2)
+library(ggplot2)
+library(fmsb)
+library(Rmisc)
+plot_res = 300 # DPI of PNG graphs
+```
+
+### plot mean of three cages per treatment with standard error
+### Cycle 1
+
+```{r cycle1, fig.width=6, fig.height=3}
+cycle1 <- read.table("experiments_survival/cycle1_survival_2019.txt", header = TRUE)
+tgc_cycle1 <- summarySE(cycle1, measurevar="percent_survived", groupvars=c("time","treatment"))
+
+p<-ggplot(data=tgc_cycle1, aes(x=time, y=percent_survived, group = treatment, colour = treatment)) +
+  geom_errorbar(aes(ymin=percent_survived-se, ymax=percent_survived+se), width=.1)+
+  #geom_errorbar(aes(ymin=percent_survived-sd, ymax=percent_survived+sd), width=.3, size=1.1)+
+  geom_line(size=1.5) +
+  geom_point(size=2, shape=19, fill="white")
+
+p<-p+scale_color_manual(values=c("control"="#55596a", "Tetracycline"="#6ebe9f"))
+p<-p+coord_cartesian(xlim = c(0, 10))+scale_x_continuous(breaks=c(1,2,3,4,5,6,7,8,9,10))
+p<-p+coord_cartesian(ylim=c(0, 1.1))+scale_y_continuous(breaks=c(0,0.2,0.4,0.6,0.8,1))
+p2<-p+theme(axis.line=element_line(colour="black"), panel.border=element_blank(),panel.background=element_blank())
+p3<-p2+ theme(axis.text.y=element_text(size=15, face="bold"))+
+  theme(axis.title.y=element_text(size=17))+theme(axis.title.x=element_text(size=17))+theme(axis.text.x=element_text(size=15, face="bold"))+
+  #theme(legend.position = "bottomleft")
+  theme(plot.title = element_text(size=15))+ggtitle("Cycle 1 survival")
+p4<- p3+theme(legend.text = element_text(size=11))
+p5 <- p4 + theme(legend.title = element_blank(),
+                 legend.justification=c(1,0), 
+                 legend.position=c(0.25, 0.05),  
+                 legend.background = element_blank(),
+                 legend.key = element_blank()) 
+p_cycle1 <- p5 + theme(plot.title = element_text(hjust = 0.5)) +labs(x = "Time (days)")+labs(y = "Percent survival")
+ggsave("experiments_survival/cycle1_survival_2019.png", height = 3, width = 6)
+``` 
+
+### plot mean of three cages per treatment with standard error
+### Cycle 2
+
+```{r cycle2, fig.width=6, fig.height=3, echo=FALSE, warning=FALSE}
+cycle2 <- read.table("experiments_survival/cycle2_survival_2019.txt", header = TRUE)
+tgc_cycle1 <- summarySE(cycle2, measurevar="percent_survived", groupvars=c("time","treatment"))
+
+p<-ggplot(data=tgc_cycle1, aes(x=time, y=percent_survived, group = treatment, colour = treatment)) +geom_errorbar(aes(ymin=percent_survived-se, ymax=percent_survived+se), width=.1)+
+  #geom_errorbar(aes(ymin=percent_survived-sd, ymax=percent_survived+sd), width=.3, size=1.1)+
+  geom_line(size=1.5) +
+  geom_point(size=2, shape=19, fill="white")
+p<-p+scale_color_manual(values=c("control"="#55596a", "Tetracycline"="#6ebe9f"))
+p<-p+coord_cartesian(xlim = c(0, 6))+scale_x_continuous(breaks=c(1,2,3,4,5,6))
+p<-p+coord_cartesian(ylim=c(0, 1.1))+scale_y_continuous(breaks=c(0,0.2,0.4,0.6,0.8,1))
+p2<-p+theme(axis.line=element_line(colour="black"), panel.border=element_blank(),panel.background=element_blank())
+p3<-p2+ theme(axis.text.y=element_text(size=15, face="bold"))+
+  theme(axis.title.y=element_text(size=17))+theme(axis.title.x=element_text(size=17))+theme(axis.text.x=element_text(size=15, face="bold"))+
+  #theme(legend.position = "bottomleft")
+  theme(plot.title = element_text(size=15))+ggtitle("Cycle 2 survival")
+p4<- p3+theme(legend.text = element_text(size=11))
+p5 <- p4 + theme(legend.title = element_blank(),
+                 legend.justification=c(1,0), 
+                 legend.position=c(0.25, 0.05),  
+                 legend.background = element_blank(),
+                 legend.key = element_blank()) 
+p_cycle2 <- p5 + theme(plot.title = element_text(hjust = 0.5)) +labs(x = "Time (days)")+labs(y = "Percent survival")
+ggsave("experiments_survival/cycle2_survival_2019.png", height = 3, width = 6)
+```
+```{r cycle3, fig.width=6, fig.height=3, echo=FALSE, warning=FALSE}
+cycle3 <- read.table("experiments_survival/cycle3_survival_before_stress_2019.txt", header = TRUE)
+tgc_cycle3 <- summarySE(cycle3, measurevar="percent_survived", groupvars=c("time","treatment2"))
+
+p<-ggplot(data=tgc_cycle3, aes(x=time, y=percent_survived, group = treatment2, colour = treatment2)) +geom_errorbar(aes(ymin=percent_survived-se, ymax=percent_survived+se), width=.1)+
+  #geom_errorbar(aes(ymin=percent_survived-sd, ymax=percent_survived+sd), width=.3, size=1.1)+
+  geom_line(size=1.5) +
+  geom_point(size=2, shape=19, fill="white")
+p<-p+scale_color_manual(values=c("control"="#55596a", "Tetracycline"="#6ebe9f"))
+p<-p+coord_cartesian(xlim = c(0, 6))+scale_x_continuous(breaks=c(1,2,3,4,5,6))
+p<-p+coord_cartesian(ylim=c(0, 1.1))+scale_y_continuous(breaks=c(0,0.2,0.4,0.6,0.8,1))
+p2<-p+theme(axis.line=element_line(colour="black"), panel.border=element_blank(),panel.background=element_blank())
+p3<-p2+ theme(axis.text.y=element_text(size=15, face="bold"))+
+  theme(axis.title.y=element_text(size=17))+theme(axis.title.x=element_text(size=17))+theme(axis.text.x=element_text(size=15, face="bold"))+
+  #theme(legend.position = "bottomleft")
+  theme(plot.title = element_text(size=15))+ggtitle("Cycle 3 survival")
+p4<- p3+theme(legend.text = element_text(size=11))
+p5 <- p4 + theme(legend.title = element_blank(),
+                 legend.justification=c(1,0), 
+                 legend.position=c(0.25, 0.05),  
+                 legend.background = element_blank(),
+                 legend.key = element_blank()) 
+p_cycle3 <- p5 + theme(plot.title = element_text(hjust = 0.5)) +labs(x = "Time (days)")+labs(y = "Percent survival")
+ggsave("experiments_survival/cycle3_survival_2019.png", height = 3, width = 6)
+```
+```{r arrange_survival_plots}
+
+leg <- get_legend(p_cycle3)
+p_cycle3.1 <- p_cycle3 + theme(legend.position = "none",plot.title = element_blank())
+
+p_cycle2.1 <- p_cycle2 + theme(legend.position = "none",axis.title.x = element_blank(), axis.title.y = element_blank(),plot.title = element_blank())
+
+p_cycle1.1 <- p_cycle1 + theme(legend.position = "none",axis.title.x = element_blank(),plot.title = element_blank())
+
+figure_supp_1 <- "experiments_survival/arrange_survival_plots_2019.png"
+png(figure_supp_1, 13 * plot_res, 7 * plot_res, res = plot_res)
+ggarrange(p_cycle1.1, p_cycle2.1, p_cycle3.1, ncol=2, nrow=2,labels = c("Cycle one", "Cycle two", "Cycle three"),font.label = list(size = 18, color = "dimgray"),vjust = c(1,1,1),hjust = c(-0.75,-0.5,-0.6))
+invisible(dev.off())
+knitr::include_graphics(figure_supp_1, dpi = plot_res)
+```
+
+```{r fisher_test}
+tetra <- read.table("experiments_survival/tetra cycle 3 day 5 to 6 survival_2019.txt", header = TRUE)
+fisher.test(tetra, alternative = "two.sided")
+
+```

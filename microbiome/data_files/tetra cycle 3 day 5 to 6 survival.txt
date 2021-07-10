@@ -1,0 +1,3 @@
+	dead	alive
+Tetracycline	46	1
+control_Tetracycline	35	18
