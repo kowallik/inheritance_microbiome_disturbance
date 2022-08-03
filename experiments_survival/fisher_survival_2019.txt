@@ -1,3 +1,0 @@
-	alive	dead
-control	18	35
-tetracycline	1	46
