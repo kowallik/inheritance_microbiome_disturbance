@@ -1,7 +1,0 @@
-treatment	group	cage	alive 	dead	all	percent_survival
-Tetracycline	coevolved	cage1	0	16	16	0
-Tetracycline	coevolved	cage2	1	16	17	0.058823529
-Tetracycline	coevolved	cage3	0	13	13	0
-Tetracycline	control	cage1	8	8	16	0.5
-Tetracycline	control	cage2	2	18	20	0.1
-Tetracycline	control	cage3	8	10	18	0.444444444
