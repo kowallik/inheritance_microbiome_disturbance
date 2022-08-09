@@ -1,0 +1,13 @@
+{
+	"n_targets": 27887,
+	"n_bootstraps": 100,
+	"n_processed": 4705949,
+	"n_pseudoaligned": 2928311,
+	"n_unique": 1724232,
+	"p_pseudoaligned": 62.2,
+	"p_unique": 36.6,
+	"kallisto_version": "0.44.0",
+	"index_version": 10,
+	"start_time": "Tue Jan  7 12:45:12 2020",
+	"call": "kallisto quant -b 100 -s 200 -l 350 -t 1 --single -o data/rnaseq/kallisto/21_C2_Tet3 -i ref/Amel_HAv3.1 data/rnaseq/trimmed_reads/21_C2_Tet3.fastq.gz"
+}
