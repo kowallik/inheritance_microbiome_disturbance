@@ -1,0 +1,463 @@
+---
+title: "RNA_differential_gene_expression_analysis"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+library(Matrix)
+library(tidyverse)
+library(sleuth)
+library(readxl)
+library(ggsignif)
+library(kableExtra)
+library(DESeq2)
+library(tximport)
+library(apeglm)
+library(reshape)
+library(plyr)
+library(ggpubr)
+library(ggplot2)
+library(scales)
+
+```
+
+```{r}
+library(GenomicFeatures)
+library(biomaRt)
+library("systemPipeR")
+
+mart <- useMart(biomart="metazoa_mart", host="metazoa.ensembl.org")
+datasets <- listDatasets(mart)
+datasets[1:40 , 1:2]
+
+## choose my data set of interest
+
+txdb <- makeTxDbFromBiomart(biomart="metazoa_mart",dataset="amellifera_eg_gene", host="metazoa.ensembl.org")
+k <- keys(txdb, keytype = "TXNAME")
+tx2gene <- select(txdb, k, "GENEID", "TXNAME")
+
+write_csv(tx2gene,"RNA/tx2gene_new.csv")
+```
+
+```{r load_data}
+tx2gene <- read_csv("RNA/tx2gene_new.csv")
+
+dirs <- list.files(file.path("RNA/kallisto_tetracycline_before_stress"))
+
+samples <- read.table(file.path("RNA/", "samples.txt"), header = TRUE)
+samples
+
+quant_files <- paste0("RNA/kallisto_tetracycline_before_stress/",dirs,"/abundance.tsv")
+names(quant_files) <- dirs
+all(file.exists(quant_files))
+
+txi <- tximport(quant_files,type="kallisto",tx2gene = tx2gene,ignoreTxVersion = TRUE)
+head(txi$counts)
+
+sampleinfo <- read.delim("RNA/RNA_seq_sample_metafile_tetracycline_before_stress.txt")
+rownames(sampleinfo) <- colnames(txi$counts)
+
+
+dds <- DESeqDataSetFromTximport(txi, sampleinfo,~treatment2)
+
+keep <- rowSums(counts(dds)) > 5
+dds <- dds[keep,]
+
+#set a standard to be compared to (control)
+dds$treatment2 <- relevel(dds$treatment2, ref = "Control")
+
+dds2 <- DESeq(dds)
+```
+
+### PCA
+```{r pca}
+
+#first normalize with vst to produce log2 scale data
+vstcounts2 <- vst(dds2, blind=TRUE)
+pcaData<-plotPCA(vstcounts2, intgroup=c("treatment2"),returnData=TRUE)
+percentVar2 <- round(100 * attr(pcaData, "percentVar"))
+
+ggplot(pcaData, aes(PC1, PC2, color=treatment2)) +
+geom_point(size=4)+xlab(paste0("PC1: ",percentVar2[1],"% variance")) +
+ylab(paste0("PC2: ",percentVar2[2],"% variance")) + 
+coord_fixed()+theme_bw()+theme(legend.title = element_blank())+ scale_color_manual(values=c("#55596a", "#6ebe9f"))+ theme(legend.text = element_text(face="bold", size=15))+theme(axis.text = element_text(size=15))+theme(axis.title = element_text(size=16))#+ylim(-50,50)+xlim(-75,75)
+
+ggsave("RNA/output/pca.png", height = 4, width = 6)
+```
+
+
+### MA plots treatments vs hive control
+
+```{r MA_plots}
+
+#Shrinkage of effect size (LFC estimates) for visualization and ranking of genes.
+
+resultsNames(dds2)
+
+resLFC_Tetracycline_before <- lfcShrink(dds2, coef="treatment2_Tetracycline_vs_Control", type="apeglm")
+
+library(ggpubr)
+
+Tetracycline_before<-ggmaplot(resLFC_Tetracycline_before, fdr = 0.05, fc = 1, size = 1.2,palette = c("#B31B21", "#1465AC", "darkgray"),genenames = as.vector(resLFC_Tetracycline_before$name),top = 0,legend="top",label.select = NULL)+theme(axis.text.x = element_text(size=16),axis.text.y = element_text(size=15),axis.title.x = element_text(size=17),axis.title.y = element_text(size=17),axis.line = element_line(size = 1, colour="gray20"),axis.ticks = element_line(size = 1, colour="gray20"))+guides(color = guide_legend(override.aes = list(size = c(3,3,3))))+theme(legend.position = c(0.10, 0.13),legend.text=element_text(size=14,face="bold"),legend.background = element_rect(fill="transparent"))
+
+ggsave("RNA/output/MA_before_stress.png", height = 4.5, width = 7)
+```
+
+
+### extract significant differently expressed genes
+
+```{r extract sig genes}
+#extract significant differently expressed genes
+#get annotation for signicificant genes use biomart
+
+
+#### make the gene annotation list for Apis mellifera 
+
+#mart <- useDataset('amellifera_eg_gene', mart)
+#listAttributes(mart)
+#functions <- getBM(attributes=c("ensembl_gene_id", "description"), mart=mart)
+#functions <- functions[functions[,2]!="",]; functions[,2] <- as.character(functions[,2])
+
+#write.table(functions, "RNA/annotationsBiomart.txt", quote=FALSE, row.names=FALSE, col.names=T, sep="\t")
+
+#functions <- read_csv("RNA/annotationsBiomart.csv", col_types = cols()) %>% dplyr::select(Gene_ID=ensembl_gene_id,description=description)
+
+functions <- read_csv("RNA/annotationsBiomart.csv", col_types = cols()) %>% dplyr::select(Gene_ID=ensembl_gene_id,description=description)
+
+
+res_tet_before_sig <- results(dds2, tidy=TRUE, contrast=c("treatment2","Tetracycline","Control"))
+
+write.csv(as.data.frame(res_tet_before_sig), file="RNA/output/res_tet_before_sig.csv")
+res_tet_before_sig<- subset(res_tet_before_sig, padj < 0.05,pAdjustMethod = "fdr")
+colnames(res_tet_before_sig)[which(names(res_tet_before_sig) == "row")] <- "Gene_ID"
+res_tet_before_sig<-merge(res_tet_before_sig, functions, by="Gene_ID", type="left", match="first")
+write.csv(as.data.frame(res_tet_before_sig), file="RNA/output/res_tet_before_sig.csv")
+
+#How many adjusted p-values were less than 0.05?
+sum(res_tet_before_sig$padj < 0.05, na.rm=TRUE)
+```
+
+
+
+
+
+
+```{r GO}
+
+library(AnnotationDbi)
+library(GSEABase)
+library(Category)
+library(GOstats)
+
+### make the go list for Apis mellifera
+
+library("biomaRt")
+library("systemPipeR")
+
+mart <- useDataset('amellifera_eg_gene', mart)
+listAttributes(mart)
+go <- getBM(attributes=c("ensembl_gene_id","go_id", "description","name_1006", "namespace_1003","beebase"), mart=mart)
+go <- go[go[,5]!="",]; go[,5] <- as.character(go[,5])
+
+go[go[,3]=="molecular_function", 3] <- "F"; go[go[,3]=="biological_process", 3] <- "P"; go[go[,3]=="cellular_component", 3] <- "C"
+go[1:4,]
+
+dir.create("RNA/GO")
+write.table(go, "RNA/GO/GOannotationsBiomart_mod.txt", quote=FALSE, row.names=FALSE, col.names=T, sep="\t")
+catdb <- makeCATdb(myfile="RNA/GO/GOannotationsBiomart_mod.txt", lib=NULL, org="", colno=c(1,2,3,4), idconv=NULL)
+save(catdb, file="RNA/GO/catdb.RData")
+
+### open and save as csv
+
+go <- read_csv("RNA/GO/GOannotationsBiomart_mod.csv", col_types = cols()) %>% mutate(evidence = "ISS") %>% dplyr::select(GO=go_id, evidence,gene=ensembl_gene_id)
+universe <- unique(go$gene)
+goFrame <- GOFrame(as.data.frame(go %>% dplyr::filter(gene %in% universe)), organism="Apis mellifera")
+goAllFrame <- GOAllFrame(goFrame)
+gsc <- GeneSetCollection(goAllFrame, setType = GOCollection())
+```
+
+List with significant expressed genes -> split into up- and down-regulated to receive individual Go-term files for each
+
+```{r GO_tet}
+
+#up
+tet_up <- read.csv("RNA/output/significantly_upregulated_genes_in_tet.csv")
+
+DsxModuleGo <- hyperGTest(GSEAGOHyperGParams(name = "enriched in tet treatment",
+    geneSetCollection=gsc,geneIds = intersect(tet_up$Gene_ID,universe), universeGeneIds=universe, ontology = "BP",pvalueCutoff = 0.05,conditional = FALSE,testDirection = "over"))
+
+summary(DsxModuleGo) %>% kable("html", digits = 3) %>% kable_styling() %>%  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = T) %>% scroll_box(height = "400px") 
+
+GO_enrich.tet <- as.data.frame(summary(DsxModuleGo))
+GO_enrich.tet %>% 
+arrange(Pvalue) %>% 
+write.csv(file = "RNA/output/GO_term_enrichment_tet_up.csv")
+
+### make list
+hub_genesGO <- read.csv("RNA/output/GO_term_enrichment_tet_up.csv")
+# keep only highly significant terms
+hub_genesGO <- hub_genesGO %>%
+filter(Pvalue < 0.05) 
+
+#plot it
+g <- hub_genesGO %>%
+  mutate(logPv = log(Pvalue))
+ggplot(g, aes(x = 0, y = Term, size = Count, color = logPv)) +
+  geom_point(alpha = 0.9) +
+  theme_classic()+theme(axis.title.y = element_blank())+xlim(-0.005, 0.005)+theme(axis.text.x = element_blank())+theme(axis.text.y = element_text(size=14))+theme(axis.title.x = element_blank(),axis.ticks.x = element_blank())
+ggsave("RNA/output/GO_terms_up_in_tetracycline.png", height = 8, width = 12)
+
+#down
+tet_down <- read.csv("RNA/output/significantly_downregulated_genes_in_tet.csv")
+
+DsxModuleGo <- hyperGTest(GSEAGOHyperGParams(name = "enriched in tet treatment",
+    geneSetCollection=gsc,geneIds = intersect(tet_down$Gene_ID,universe), universeGeneIds=universe, ontology = "BP",pvalueCutoff = 0.05,conditional = FALSE,testDirection = "over"))
+
+summary(DsxModuleGo) %>% kable("html", digits = 3) %>% kable_styling() %>%  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = T) %>% scroll_box(height = "400px") 
+
+GO_enrich.tet2 <- as.data.frame(summary(DsxModuleGo))
+GO_enrich.tet2 %>% 
+arrange(Pvalue) %>% 
+write.csv(file = "RNA/output/GO_term_enrichment_tet_down.csv")
+
+### make list
+hub_genesGO2 <- read.csv("RNA/output/GO_term_enrichment_tet_down.csv")
+# keep only highly significant terms
+hub_genesGO2 <- hub_genesGO2 %>%
+filter(Pvalue < 0.05) 
+
+#plot it
+g2 <- hub_genesGO2 %>%
+  mutate(logPv = log(Pvalue))
+ggplot(g2, aes(x = 0, y = Term, size = Count, color = logPv)) +
+  geom_point(alpha = 0.9) +
+  theme_classic()+theme(axis.title.y = element_blank())+xlim(-0.005, 0.005)+theme(axis.text.x = element_blank())+theme(axis.text.y = element_text(size=14))+theme(axis.title.x = element_blank(),axis.ticks.x = element_blank())
+ggsave("RNA/output/GO_terms_down_in_tetracycline.png", height = 8, width = 6)
+
+```
+
+
+
+#### Heatmap specific genes
+
+
+```{r heatmap}
+
+library("pheatmap")
+
+rld2 <- rlog(dds2, blind=FALSE)
+
+select <- order(rowMeans(counts(dds2,normalized=TRUE)),
+                decreasing=TRUE)[1:10]
+anno <- as.data.frame(colData(dds2)[c("treatment2")])
+mat <- assay(rld2)[select, ]
+mat <- mat - rowMeans(mat)
+pheatmap(mat, annotation_col = anno,cluster_cols=F, cluster_rows=FALSE)
+
+topVarGenes <- head(order(rowVars(assay(rld2)), decreasing = TRUE), 20)
+mat  <- assay(rld2)[ topVarGenes, ]
+mat  <- mat - rowMeans(mat)
+anno <- as.data.frame(colData(rld2)[c("treatment2")])
+pheatmap(mat, annotation_col = anno,cluster_cols=F)
+
+
+#all significantly different genes
+
+genes <- c("GeneID_410065","LOC724386","LOC725178","LOC100577725","GeneID_411899","LOC113219028","LOC725309","LOC409341",
+"LOC408817","GeneID_551367","LOC726478","LOC410894","LOC727193","LOC551845","LOC100578247","GeneID_406094","LOC113219349",
+"LOC726118","LOC102656010","LOC726323","LOC725511","LOC100576478","GeneID_677671","LOC113218576","GeneID_725382","LOC551327","LOC410537","LOC724560", "LOC724436","LOC724275")
+
+
+mat <- assay(rld2)[genes, ]
+mat <- mat - rowMeans(mat)
+anno <- as.data.frame(colData(dds2)[c("treatment2")])
+pheatmap(mat, annotation_col = anno,cluster_cols=F, cluster_rows=F,show_colnames = T,annotation_name_column=T)
+
+
+mat <- assay(rld2)[genes, ]
+mat <- mat - rowMeans(mat)
+anno <- as.data.frame(colData(dds2)[c("treatment2")])
+
+#anno$treatment2 <- factor(anno$treatment2,levels=c("Tetracycline","Control"))
+
+pheatmap(mat, filename = "pheatmap.png",annotation_col = anno,cluster_cols=F, cluster_rows=F,show_colnames = T,annotation_name_column=T,cellwidth = 21, cellheight = 17, width = 8, height=9,fontsize = 12)
+```
+
+
+#### GO plots with Revigo
+
+```{r revigo}
+# A plotting R script produced by the Revigo server at http://revigo.irb.hr/
+# If you found Revigo useful in your work, please cite the following reference:
+# Supek F et al. "REVIGO summarizes and visualizes long lists of Gene Ontology
+# terms" PLoS ONE 2011. doi:10.1371/journal.pone.0021800
+
+# --------------------------------------------------------------------------
+# If you don't have the ggplot2 package installed, uncomment the following line:
+# install.packages( "ggplot2" );
+library( ggplot2 );
+
+# --------------------------------------------------------------------------
+# If you don't have the scales package installed, uncomment the following line:
+# install.packages( "scales" );
+library( scales );
+
+# --------------------------------------------------------------------------
+# Here is your data from Revigo. Scroll down for plot configuration options.
+
+revigo.names <- c("term_ID","description","frequency","plot_X","plot_Y","log_size","value","uniqueness","dispensability");
+revigo.data <- rbind(c("GO:0006629","lipid metabolic process",4.38816786559179,-1.88346730046059,-5.2917654072856,6.02497510193756,-2.71272085705238,0.979389881038138,0),
+c("GO:1901571","fatty acid derivative transport",0.201102521299175,6.6198598248366,2.46449719605718,4.6861176659199,-2.56559510503083,0.472797227479897,0),
+c("GO:0016042","lipid catabolic process",0.472402764599779,-4.40731546960288,3.5167869211167,5.0570076983771,-1.86780911123895,0.918984076131773,0.08202696),
+c("GO:0046903","secretion",0.618250789830609,3.60076182635511,-0.321576604771052,5.17385904921228,-1.76880575390154,0.637001942909781,0.24901185),
+c("GO:0071715","icosanoid transport",0.0324143548859793,5.34076828059356,3.7903291850443,3.89348434621849,-2.56559510503083,0.344717558840393,0.3762206),
+c("GO:0015909","long-chain fatty acid transport",0.043455287372065,6.44050575892195,0.490490057851033,4.02077548819356,-2.50764532813345,0.341270762576924,0.38412594),
+c("GO:0006820","anion transport",1.41736158254305,4.01235840269399,2.90459195794713,5.53417338564142,-1.64204261979587,0.463900117561613,0.45707323),
+c("GO:0010876","lipid localization",0.432804553454561,5.70654416078144,-1.13038042206517,5.01898743756423,-1.67236218483624,0.524692097242962,0.48822273),
+c("GO:0015849","organic acid transport",0.925561577455518,5.64931962582364,1.64549337232282,5.34909872067596,-2.18066668254272,0.42102954790647,0.49199898),
+c("GO:0006644","phospholipid metabolic process",1.39929008254143,-4.07059578974619,4.58166987892869,5.52860050104756,-1.45996990357888,0.91762622870524,0.62115132),
+c("GO:0015711","organic anion transport",0.456398591168729,5.20440094596548,2.67203346127001,5.0420396965516,-1.86780911123895,0.320822477777259,0.62516112));
+
+one.data <- data.frame(revigo.data);
+names(one.data) <- revigo.names;
+one.data <- one.data [(one.data$plot_X != "null" & one.data$plot_Y != "null"), ];
+one.data$plot_X <- as.numeric( as.character(one.data$plot_X) );
+one.data$plot_Y <- as.numeric( as.character(one.data$plot_Y) );
+one.data$log_size <- as.numeric( as.character(one.data$log_size) );
+one.data$value <- as.numeric( as.character(one.data$value) );
+one.data$frequency <- as.numeric( as.character(one.data$frequency) );
+one.data$uniqueness <- as.numeric( as.character(one.data$uniqueness) );
+one.data$dispensability <- as.numeric( as.character(one.data$dispensability) );
+#head(one.data);
+
+
+# --------------------------------------------------------------------------
+# Names of the axes, sizes of the numbers and letters, names of the columns,
+# etc. can be changed below
+
+p1 <- ggplot( data = one.data );
+p1 <- p1 + geom_point( aes( plot_X, plot_Y, colour = value, size = log_size), alpha = I(0.6) ) + scale_size_area();
+p1 <- p1 + scale_colour_gradientn( colours = c("blue", "green", "yellow", "red"), limits = c( min(one.data$value), 0) );
+p1 <- p1 + geom_point( aes(plot_X, plot_Y, size = log_size), shape = 21, fill = "transparent", colour = I (alpha ("black", 0.6) )) + scale_size_area();
+p1 <- p1 + scale_size( range=c(5, 30)) + theme_bw(); # + scale_fill_gradientn(colours = heat_hcl(7), limits = c(-300, 0) );
+ex <- one.data [ one.data$dispensability < 0.80, ];
+p1 <- p1 + geom_text( data = ex, aes(plot_X, plot_Y, label = description), colour = I(alpha("black", 0.85)), size = 7.5 );
+p1 <- p1 + labs (y = "semantic space x", x = "semantic space y");
+p1 <- p1 + theme(legend.key = element_blank()) ;
+one.x_range = max(one.data$plot_X) - min(one.data$plot_X);
+one.y_range = max(one.data$plot_Y) - min(one.data$plot_Y);
+p1 <- p1 + xlim(min(one.data$plot_X)-one.x_range/10,max(one.data$plot_X)+one.x_range/10);
+p1 <- p1 + ylim(min(one.data$plot_Y)-one.y_range/10,max(one.data$plot_Y)+one.y_range/10);
+
+ggsave("RNA/output_revigo/revigo_down.png", height = 9, width = 14)
+
+pdf("RNA/output_revigo/revigo_down.pdf",         # File name
+    width = 8, height = 7, # Width and height in inches
+    bg = "white",          # Background color
+    colormodel = "cmyk",    # Color model (cmyk is required for most publications)
+    paper = "A4")   
+
+# Closing the graphical device
+dev.off() 
+
+svg("RNA/output_revigo/revigo_down.svg", height = 9, width = 14)
+
+```
+
+
+```{r, revigo_up}
+revigo.names <- c("term_ID","description","frequency","plot_X","plot_Y","log_size","value","uniqueness","dispensability");
+revigo.data <- rbind(c("GO:0006508","proteolysis",5.78607420650082,5.58282998398198,1.03734185543534,6.14507576927552,-1.31721796222847,0.988356247607329,0),
+c("GO:0006955","immune response",0.374181966333318,2.00129479642244,-6.17447273814941,4.95577912049257,-1.34006606739276,0.806507589400855,0),
+c("GO:0015850","organic hydroxy compound transport",0.108967582082186,-6.17642106406215,-2.11360191633515,4.42000528495905,-1.85645877283574,0.713609345497058,0),
+c("GO:0051259","protein complex oligomerization",0.177384077044745,-1.47124120870902,6.20462254994119,4.63161623490872,-1.46269076369886,0.934247436994229,0),
+c("GO:0005975","carbohydrate metabolic process",5.93663689633546,4.06434201135791,3.7126987009495,6.15623224910857,-1.30143546849756,0.988356247607329,0.12261738),
+c("GO:0098662","inorganic cation transmembrane transport",2.28227053275793,-5.85779171232535,-0.129522965398778,5.741059370449,-1.62303968272161,0.55375549214783,0.26529499),
+c("GO:0098542","defense response to other organism",0.596135781346285,3.46975304962343,-4.55707621478969,5.15803966721445,-1.31933925926418,0.69862945616683,0.32000436),
+c("GO:0009607","response to biotic stimulus",0.755315784340801,2.88052374843212,-5.41804629198068,5.26082240178297,-1.31933925926418,0.847609730104441,0.34246274),
+c("GO:0015918","sterol transport",0.0358239936987555,-5.14028500849843,-2.90194198198452,3.93691568094525,-1.85645877283574,0.590595633331181,0.36314768),
+c("GO:0051260","protein homooligomerization",0.106560534512049,-0.855546408548139,6.10353719599529,4.41030473389428,-1.55821105745888,0.934491875120662,0.63881169),
+c("GO:0032365","intracellular lipid transport",0.0260466576135163,-5.51666730638516,-3.38213886266422,3.79851253303135,-1.78997595297266,0.630738365627816,0.67860105),
+c("GO:0006814","sodium ion transport",0.359138954754714,-6.05691535451315,0.537049836878101,4.93795898335307,-1.31933925926418,0.613352054603114,0.68538926));
+
+one.data <- data.frame(revigo.data);
+names(one.data) <- revigo.names;
+one.data <- one.data [(one.data$plot_X != "null" & one.data$plot_Y != "null"), ];
+one.data$plot_X <- as.numeric( as.character(one.data$plot_X) );
+one.data$plot_Y <- as.numeric( as.character(one.data$plot_Y) );
+one.data$log_size <- as.numeric( as.character(one.data$log_size) );
+one.data$value <- as.numeric( as.character(one.data$value) );
+one.data$frequency <- as.numeric( as.character(one.data$frequency) );
+one.data$uniqueness <- as.numeric( as.character(one.data$uniqueness) );
+one.data$dispensability <- as.numeric( as.character(one.data$dispensability) );
+#head(one.data);
+
+p1 <- ggplot( data = one.data );
+p1 <- p1 + geom_point( aes( plot_X, plot_Y, colour = value, size = log_size), alpha = I(0.6) ) + scale_size_area();
+p1 <- p1 + scale_colour_gradientn( colours = c("blue", "green", "yellow", "red"), limits = c( min(one.data$value), 0) );
+p1 <- p1 + geom_point( aes(plot_X, plot_Y, size = log_size), shape = 21, fill = "transparent", colour = I (alpha ("black", 0.6) )) + scale_size_area();
+p1 <- p1 + scale_size( range=c(5, 30)) + theme_bw(); # + scale_fill_gradientn(colours = heat_hcl(7), limits = c(-300, 0) );
+ex <- one.data [ one.data$dispensability < 0.80, ];
+p1 <- p1 + geom_text( data = ex, aes(plot_X, plot_Y, label = description), colour = I(alpha("black", 0.85)), size = 7.5 );
+p1 <- p1 + labs (y = "semantic space x", x = "semantic space y");
+p1 <- p1 + theme(legend.key = element_blank()) ;
+one.x_range = max(one.data$plot_X) - min(one.data$plot_X);
+one.y_range = max(one.data$plot_Y) - min(one.data$plot_Y);
+p1 <- p1 + xlim(min(one.data$plot_X)-one.x_range/10,max(one.data$plot_X)+one.x_range/10);
+p1 <- p1 + ylim(min(one.data$plot_Y)-one.y_range/10,max(one.data$plot_Y)+one.y_range/10);
+ggsave("RNA/output_revigo/revigo_up.png", height = 9, width = 14)
+
+```
+
+
+
+
+```{r, revigo_up}
+revigo.names <- c("term_ID","description","frequency","plot_X","plot_Y","log_size","value","uniqueness","dispensability");
+revigo.data <- rbind(c("GO:0006508","proteolysis",5.78607420650082,5.58282998398198,1.03734185543534,6.14507576927552,-1.31721796222847,0.988356247607329,0),
+c("GO:0006955","immune response",0.374181966333318,2.00129479642244,-6.17447273814941,4.95577912049257,-1.34006606739276,0.806507589400855,0),
+c("GO:0015850","organic hydroxy compound transport",0.108967582082186,-6.17642106406215,-2.11360191633515,4.42000528495905,-1.85645877283574,0.713609345497058,0),
+c("GO:0051259","protein complex oligomerization",0.177384077044745,-1.47124120870902,6.20462254994119,4.63161623490872,-1.46269076369886,0.934247436994229,0),
+c("GO:0005975","carbohydrate metabolic process",5.93663689633546,4.06434201135791,3.7126987009495,6.15623224910857,-1.30143546849756,0.988356247607329,0.12261738),
+c("GO:0098662","inorganic cation transmembrane transport",2.28227053275793,-5.85779171232535,-0.129522965398778,5.741059370449,-1.62303968272161,0.55375549214783,0.26529499),
+c("GO:0098542","defense response to other organism",0.596135781346285,3.46975304962343,-4.55707621478969,5.15803966721445,-1.31933925926418,0.69862945616683,0.32000436),
+c("GO:0009607","response to biotic stimulus",0.755315784340801,2.88052374843212,-5.41804629198068,5.26082240178297,-1.31933925926418,0.847609730104441,0.34246274),
+c("GO:0015918","sterol transport",0.0358239936987555,-5.14028500849843,-2.90194198198452,3.93691568094525,-1.85645877283574,0.590595633331181,0.36314768),
+c("GO:0051260","protein homooligomerization",0.106560534512049,-0.855546408548139,6.10353719599529,4.41030473389428,-1.55821105745888,0.934491875120662,0.63881169),
+c("GO:0032365","intracellular lipid transport",0.0260466576135163,-5.51666730638516,-3.38213886266422,3.79851253303135,-1.78997595297266,0.630738365627816,0.67860105),
+c("GO:0006814","sodium ion transport",0.359138954754714,-6.05691535451315,0.537049836878101,4.93795898335307,-1.31933925926418,0.613352054603114,0.68538926));
+
+one.data <- data.frame(revigo.data);
+names(one.data) <- revigo.names;
+one.data <- one.data [(one.data$plot_X != "null" & one.data$plot_Y != "null"), ];
+one.data$plot_X <- as.numeric( as.character(one.data$plot_X) );
+one.data$plot_Y <- as.numeric( as.character(one.data$plot_Y) );
+one.data$log_size <- as.numeric( as.character(one.data$log_size) );
+one.data$value <- as.numeric( as.character(one.data$value) );
+one.data$frequency <- as.numeric( as.character(one.data$frequency) );
+one.data$uniqueness <- as.numeric( as.character(one.data$uniqueness) );
+one.data$dispensability <- as.numeric( as.character(one.data$dispensability) );
+#head(one.data);
+
+p1 <- ggplot( data = one.data );
+p1 <- p1 + geom_point( aes( plot_X, plot_Y, colour = value, size = log_size), alpha = I(0.6) ) + scale_size_area();
+p1 <- p1 + scale_colour_gradientn( colours = c("blue", "green", "yellow", "red"), limits = c( min(one.data$value), 0) );
+p1 <- p1 + geom_point( aes(plot_X, plot_Y, size = log_size), shape = 21, fill = "transparent", colour = I (alpha ("black", 0.6) )) + scale_size_area();
+p1 <- p1 + scale_size( range=c(5, 30)) + theme_bw(); # + scale_fill_gradientn(colours = heat_hcl(7), limits = c(-300, 0) );
+ex <- one.data [ one.data$dispensability < 0.80, ];
+p1 <- p1 + geom_text( data = ex, aes(plot_X, plot_Y, label = description), colour = I(alpha("black", 0.85)), size = 7.5 );
+p1 <- p1 + labs (y = "semantic space x", x = "semantic space y");
+p1 <- p1 + theme(legend.key = element_blank()) ;
+one.x_range = max(one.data$plot_X) - min(one.data$plot_X);
+one.y_range = max(one.data$plot_Y) - min(one.data$plot_Y);
+p1 <- p1 + xlim(min(one.data$plot_X)-one.x_range/10,max(one.data$plot_X)+one.x_range/10);
+p1 <- p1 + ylim(min(one.data$plot_Y)-one.y_range/10,max(one.data$plot_Y)+one.y_range/10);
+ggsave("RNA/output_revigo/revigo_up2.png", height = 9, width = 14)
+
+```
+
+
+
